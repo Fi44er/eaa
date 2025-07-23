@@ -1,6 +1,7 @@
 package track
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/pion/webrtc/v4"
@@ -43,6 +44,8 @@ func (tr *Track) AddTrack(t *webrtc.TrackRemote) *webrtc.TrackLocalStaticRTP { /
 	}
 
 	tr.trackLocals[t.ID()] = trackLocal
+	fmt.Printf("Added track: %+v\n", trackLocal)
+
 	return trackLocal
 }
 

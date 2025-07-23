@@ -24,7 +24,7 @@ type Track interface {
 type WS struct {
 	log             logging.LeveledLogger
 	listLock        *sync.RWMutex
-	peerConnections []utils.PeerConnectionState
+	peerConnections *[]utils.PeerConnectionState
 	peer            Peer
 	track           Track
 }
@@ -32,7 +32,7 @@ type WS struct {
 func NewW(
 	log logging.LeveledLogger,
 	listLock *sync.RWMutex,
-	peerConnections []utils.PeerConnectionState,
+	peerConnections *[]utils.PeerConnectionState,
 	peer Peer,
 	track Track,
 
@@ -64,16 +64,21 @@ func (ws *WS) WebsocketHandler(w http.ResponseWriter, r *http.Request) { // noli
 		return
 	}
 
-	c := &utils.ThreadSafeWriter{WS: unsafeConn, MU: &sync.Mutex{}} // nolint
+	c := &utils.ThreadSafeWriter{WS: unsafeConn, MU: sync.Mutex{}} // nolint
 
 	// When this frame returns close the Websocket
 	defer c.WS.Close() //nolint
 
 	// Create new PeerConnection
-	peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{
+		ICEServers: []webrtc.ICEServer{
+			{
+				URLs: []string{"stun:stun.l.google.com:19302"},
+			},
+		},
+	})
 	if err != nil {
 		ws.log.Errorf("Failed to creates a PeerConnection: %v", err)
-
 		return
 	}
 
@@ -93,7 +98,7 @@ func (ws *WS) WebsocketHandler(w http.ResponseWriter, r *http.Request) { // noli
 
 	// Add our new PeerConnection to global list
 	ws.listLock.Lock()
-	ws.peerConnections = append(ws.peerConnections, utils.PeerConnectionState{PeerConnection: peerConnection, Websocket: c})
+	*ws.peerConnections = append(*ws.peerConnections, utils.PeerConnectionState{PeerConnection: peerConnection, Websocket: c})
 	ws.listLock.Unlock()
 
 	// Trickle ICE. Emit server candidate to client
@@ -123,7 +128,6 @@ func (ws *WS) WebsocketHandler(w http.ResponseWriter, r *http.Request) { // noli
 	// If PeerConnection is closed remove it from global list
 	peerConnection.OnConnectionStateChange(func(p webrtc.PeerConnectionState) {
 		ws.log.Infof("Connection state change: %s", p)
-
 		switch p {
 		case webrtc.PeerConnectionStateFailed:
 			if err := peerConnection.Close(); err != nil {
@@ -136,6 +140,7 @@ func (ws *WS) WebsocketHandler(w http.ResponseWriter, r *http.Request) { // noli
 	})
 
 	peerConnection.OnTrack(func(t *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
+
 		ws.log.Infof("Got remote track: Kind=%s, ID=%s, PayloadType=%d", t.Kind(), t.ID(), t.PayloadType())
 
 		// Create a track to fan out our incoming video to all peers

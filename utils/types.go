@@ -19,5 +19,5 @@ type WebsocketMessage struct {
 
 type ThreadSafeWriter struct {
 	WS *websocket.Conn
-	MU *sync.Mutex
+	MU sync.Mutex
 }
